@@ -1,0 +1,5 @@
+@reference "tailwindcss";
+
+.char {
+  @apply pointer-events-none transition-colors duration-200;
+}

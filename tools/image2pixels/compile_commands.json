@@ -1,0 +1,19 @@
+[
+  {
+    "arguments": [
+      "/opt/homebrew/opt/llvm/bin/clang++",
+      "-std=c++20",
+      "-Wall",
+      "-Wextra",
+      "-O2",
+      "-Ilib",
+      "-c",
+      "-o",
+      "main.o",
+      "main.cpp"
+    ],
+    "directory": "/Users/peterkoeppen/projects/code/pkoeppen/tools/image2pixels",
+    "file": "/Users/peterkoeppen/projects/code/pkoeppen/tools/image2pixels/main.cpp",
+    "output": "/Users/peterkoeppen/projects/code/pkoeppen/tools/image2pixels/main.o"
+  }
+]
