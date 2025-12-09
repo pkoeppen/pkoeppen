@@ -19,16 +19,43 @@ export default function Main() {
 
           <section
             id="hero"
+            data-section
+            data-height="100"
+            data-static="false"
             className="relative flex h-screen w-full items-center justify-evenly pt-24"
           >
             <FloatingText text="CREATIVE" orientation="left" />
             <div className="h-full w-1/3" />
             <FloatingText text="ENGINEER" orientation="right" />
           </section>
-          <section id="about" className="h-[200vh] w-full border border-red-500" />
-          <section id="work" className="h-[200vh] w-full border border-blue-500" />
-          <section id="skills" className="flex h-[200vh] w-full border border-green-500" />
-          <section id="contact" className="flex h-[200vh] w-full border border-yellow-500" />
+          <section
+            id="about"
+            data-section
+            data-height="200"
+            data-static="false"
+            className="h-[200vh] w-full border-red-500"
+          />
+          <section
+            id="work"
+            data-section
+            data-height="200"
+            data-static="false"
+            className="h-[200vh] w-full border-blue-500"
+          />
+          <section
+            id="skills"
+            data-section
+            data-height="200"
+            data-static="false"
+            className="flex h-[200vh] w-full border-green-500"
+          />
+          <section
+            id="contact"
+            data-section
+            data-height="200"
+            data-static="true"
+            className="flex h-[200vh] w-full border-yellow-500"
+          />
         </main>
       </div>
 

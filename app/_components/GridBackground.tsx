@@ -2,41 +2,11 @@
 
 import React from "react";
 
+import useSections from "../_hooks/useSections";
+
 type GridBackgroundProps = {
   getProgress: () => number;
 };
-
-type RawSection = {
-  height: number; // 100, 200, ...
-  static: boolean;
-};
-
-type NormalizedSection = RawSection & {
-  startNorm: number; // 0..1
-  endNorm: number; // 0..1
-};
-
-function normalizeSections(sections: RawSection[], totalHeight: number): NormalizedSection[] {
-  let offset = 0;
-  return sections.map((s) => {
-    const startNorm = offset / totalHeight; // 0..1
-    const endNorm = (offset + s.height) / totalHeight; // 0..1
-    offset += s.height;
-    return { ...s, startNorm, endNorm };
-  });
-}
-
-const rawSections = [
-  { id: "hero", height: 100, static: false },
-  { id: "about", height: 200, static: true },
-  { id: "work", height: 200, static: true },
-  { id: "skills", height: 200, static: true },
-  { id: "contact", height: 200, static: false },
-];
-
-const totalHeight = rawSections.reduce((sum, s) => sum + s.height, 0);
-const sections = normalizeSections(rawSections, totalHeight);
-const normalizedViewportHeight = 100 / totalHeight;
 
 export default function GridBackground({ getProgress }: GridBackgroundProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
@@ -51,7 +21,11 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
     scrollRangeRef.current = Math.max(0, scrollContainer.scrollHeight - window.innerHeight);
   };
 
-  React.useEffect(() => {
+  const { ready, sections, normalizedViewportHeight } = useSections();
+
+  React.useLayoutEffect(() => {
+    if (!ready) return;
+
     const canvas = canvasRef.current;
     scrollContainerRef.current = document.querySelector("#smooth-content");
 
@@ -101,7 +75,7 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
       let multiplier = 1;
 
       for (const section of sections) {
-        if (!section.static || section.height === 100) continue;
+        if (section.static || section.height === 100) continue;
 
         const sectionTop = section.startNorm;
         const sectionBottom = section.endNorm;
@@ -150,7 +124,6 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
       lastProgressRef.current = progress;
 
       const easingMultiplier = calculateEasingMultiplier();
-      // scale the delta, not the absolute
       virtualScrollYRef.current += deltaProgress * scrollRange * easingMultiplier;
 
       const scrollY = virtualScrollYRef.current;
@@ -209,7 +182,7 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
       //window.removeEventListener("pointermove", handlePointerMove);
       cancelAnimationFrame(frameId);
     };
-  }, []);
+  }, [ready, sections, normalizedViewportHeight, getProgress]);
 
   return (
     <div className="bg-background pointer-events-none fixed inset-0 z-0">

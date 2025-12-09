@@ -4,6 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
+import useSections from "../_hooks/useSections";
 // @ts-expect-error shader loading defined in next.config.ts
 import fragmentShader from "../_shaders/shader.frag";
 // @ts-expect-error shader loading defined in next.config.ts
@@ -103,76 +104,33 @@ export function PixelField({ timelineRef, getProgress }: PixelFieldProps) {
     [],
   );
 
+  const { ready, sections, normalizedViewportHeight } = useSections();
+
   useLayoutEffect(() => {
+    if (!ready) return;
     if (!meshRef.current) return;
     if (!timelineRef.current) return;
 
-    const totalHeight = 900; // viewport heights
-    const fullUnit = 100 / totalHeight;
-    const halfUnit = fullUnit / 2;
+    const tl = timelineRef.current;
+    tl.clear();
 
-    // all this shit has to add up to 1
+    sections.forEach((section, index) => {
+      const { startNorm, endNorm } = section;
+      const duration = endNorm - startNorm;
 
-    timelineRef.current.to(
-      meshRef.current.position,
-      {
-        x: 35,
-        duration: halfUnit,
-        ease: "power2.inOut",
-      },
-      halfUnit,
-    );
+      const targetX = index % 2 === 0 ? 35 : -35;
 
-    timelineRef.current.to(
-      meshRef.current.position,
-      {
-        x: -35,
-        duration: fullUnit * 1.5,
-        ease: "power2.inOut",
-      },
-      fullUnit,
-    );
-
-    timelineRef.current.to(
-      meshRef.current.position,
-      {
-        x: 35,
-        duration: 1 / 6,
-        ease: "power2.inOut",
-      },
-      7 / 12,
-    );
-
-    timelineRef.current.to(
-      meshRef.current.position,
-      {
-        x: -35,
-        duration: 1 / 6,
-        ease: "power2.inOut",
-      },
-      3 / 6,
-    );
-
-    timelineRef.current.to(
-      meshRef.current.position,
-      {
-        y: 35,
-        duration: 1 / 6,
-        ease: "power2.inOut",
-      },
-      4 / 6,
-    );
-
-    timelineRef.current.to(
-      meshRef.current.position,
-      {
-        x: -35,
-        duration: 1 / 6,
-        ease: "power2.inOut",
-      },
-      5 / 6,
-    );
-  }, [timelineRef]);
+      tl.to(
+        meshRef.current!.position,
+        {
+          x: targetX,
+          duration,
+          ease: "power2.inOut",
+        },
+        startNorm,
+      );
+    });
+  }, [ready, sections, timelineRef]);
 
   useFrame(({ clock }) => {
     const progress = getProgress();

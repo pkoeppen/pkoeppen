@@ -21,7 +21,7 @@ export const keyframes: readonly Keyframe[] = [
     frameStart: 0,
     frameEnd: 14,
     progressStart: 0,
-    progressEnd: 1 / 6,
+    progressEnd: 1 / 9,
   },
   {
     frameStart: 14,

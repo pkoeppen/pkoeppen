@@ -31,6 +31,8 @@ export default function ScrollScene() {
       },
     });
 
+    timeline.to({}, { duration: 1 }, 0);
+
     ScrollTrigger.create({
       trigger: triggerElement,
       start: "top top",
