@@ -25,7 +25,6 @@ type WobblyTextProps = {
 
 export default function FloatingText({ text, orientation = "left" }: WobblyTextProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
-  const previousOffset = useRef<number | null>(null);
 
   React.useEffect(() => {
     const start = performance.now();
@@ -94,9 +93,9 @@ export default function FloatingText({ text, orientation = "left" }: WobblyTextP
     let lastCharChange = start;
 
     let currentCharIndex = 0;
-    const charChangeInterval = 80;
-    const charChangeDuration = 100;
-    const charChangeDurationBase = 500;
+    const charChangeInterval = 80; // time between random char changes
+    const charChangeDuration = 100; // offset between char events
+    const charChangeDurationBase = 500; // base duration
     const colorOffset = 0;
 
     const tick = (now: number) => {
@@ -129,13 +128,31 @@ export default function FloatingText({ text, orientation = "left" }: WobblyTextP
 
         s.span.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
 
+        // if (timeSinceStart < index * charChangeDuration) {
+        //   // char not yet visible
+        // } else if (timeSinceLastCharChange > charChangeInterval) {
+        //   // random char visible, red
+        //   lastCharChange = now;
+        //   s.span.style.opacity = "1";
+        //   s.span.innerText = alphabet[(currentCharIndex++ + index) % alphabet.length];
+        //   s.span.style.color = `hsl(${colorOffset + Math.random() * 10}, 100%, 35%)`;
+        // } else if (timeSinceStart > (index + 1) * charChangeDuration + charChangeDurationBase) {
+        //   // final char
+        //   s.span.innerText = s.char;
+        //   s.span.style.color = "inherit";
+        // }
+
         if (timeSinceStart > (index + 1) * charChangeDuration + charChangeDurationBase) {
+          // final char
           s.span.innerText = s.char;
           s.span.style.color = "inherit";
         } else if (timeSinceLastCharChange > charChangeInterval) {
+          // random red char
           lastCharChange = now;
           s.span.innerText = alphabet[(currentCharIndex++ + index) % alphabet.length];
           s.span.style.color = `hsl(${colorOffset + Math.random() * 10}, 100%, 35%)`;
+        } else if (timeSinceStart > (index + 1) * charChangeInterval) {
+          s.span.style.opacity = "1";
         }
       });
 
@@ -157,11 +174,13 @@ export default function FloatingText({ text, orientation = "left" }: WobblyTextP
   return (
     <div
       ref={containerRef}
-      className="font-extrablack relative grid grid-cols-2 gap-16 font-mono text-[12rem] leading-[0.6]"
+      className="font-extrablack font-display relative grid grid-cols-2 gap-16 text-[12rem] leading-[0.6]"
     >
       {text.split("").map((ch, i) => (
         <div key={i} className="char relative">
-          <span className="inline-block">{ch}</span>
+          <span className="inline-block" style={{ opacity: 0 }}>
+            {ch}
+          </span>
         </div>
       ))}
     </div>

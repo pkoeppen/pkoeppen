@@ -1,20 +1,23 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
-import gsap from "gsap";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
+// @ts-expect-error shader loading defined in next.config.ts
+import fragmentShader from "../_shaders/shader.frag";
+// @ts-expect-error shader loading defined in next.config.ts
+import vertexShader from "../_shaders/shader.vert";
 import { frameData, keyframes } from "../frameData";
 
 type PixelFieldProps = {
+  timelineRef: React.RefObject<GSAPTimeline | null>;
   getProgress: () => number;
 };
 
-export function PixelField({ getProgress }: PixelFieldProps) {
+export function PixelField({ timelineRef, getProgress }: PixelFieldProps) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const meshRef = useRef<THREE.Mesh>(null);
-  const timeline = useRef<GSAPTimeline>(null);
 
   const { width, height, frames } = frameData;
   const instanceCount = width * height;
@@ -101,50 +104,78 @@ export function PixelField({ getProgress }: PixelFieldProps) {
   );
 
   useLayoutEffect(() => {
-    timeline.current = gsap.timeline();
-
     if (!meshRef.current) return;
+    if (!timelineRef.current) return;
 
-    timeline.current.to(
+    const totalHeight = 900; // viewport heights
+    const fullUnit = 100 / totalHeight;
+    const halfUnit = fullUnit / 2;
+
+    // all this shit has to add up to 1
+
+    timelineRef.current.to(
       meshRef.current.position,
       {
         x: 35,
-        duration: 0.25,
+        duration: halfUnit,
+        ease: "power2.inOut",
       },
-      0,
+      halfUnit,
     );
 
-    timeline.current.to(
+    timelineRef.current.to(
       meshRef.current.position,
       {
         x: -35,
-        duration: 0.25,
+        duration: fullUnit * 1.5,
+        ease: "power2.inOut",
       },
-      0.25,
+      fullUnit,
     );
 
-    timeline.current.to(
+    timelineRef.current.to(
       meshRef.current.position,
       {
         x: 35,
-        duration: 0.25,
+        duration: 1 / 6,
+        ease: "power2.inOut",
       },
-      0.5,
+      7 / 12,
     );
 
-    timeline.current.to(
+    timelineRef.current.to(
       meshRef.current.position,
       {
-        x: 0,
-        duration: 0.25,
+        x: -35,
+        duration: 1 / 6,
+        ease: "power2.inOut",
       },
-      0.75,
+      3 / 6,
     );
-  }, []);
+
+    timelineRef.current.to(
+      meshRef.current.position,
+      {
+        y: 35,
+        duration: 1 / 6,
+        ease: "power2.inOut",
+      },
+      4 / 6,
+    );
+
+    timelineRef.current.to(
+      meshRef.current.position,
+      {
+        x: -35,
+        duration: 1 / 6,
+        ease: "power2.inOut",
+      },
+      5 / 6,
+    );
+  }, [timelineRef]);
 
   useFrame(({ clock }) => {
     const progress = getProgress();
-    timeline.current?.progress(progress);
     if (!materialRef.current) return;
     materialRef.current.uniforms.uTime.value = clock.getElapsedTime();
     materialRef.current.uniforms.uScroll.value = progress;
@@ -186,57 +217,3 @@ export function PixelField({ getProgress }: PixelFieldProps) {
     </mesh>
   );
 }
-
-const vertexShader = `
-  attribute vec2 instanceOffset;
-  attribute vec3 instanceColor;
-  attribute float instanceAlpha;
-
-  uniform float uTime;
-  uniform float uScroll;
-  uniform float uWaveLength;
-  uniform float uAmplitude;
-  uniform float uBaseScale;
-
-  varying vec3 vColor;
-  varying float vAlpha;
-
-  void main() {
-    vColor = instanceColor;
-    vAlpha = instanceAlpha;
-
-    // base pixel position
-    vec3 pos = position;
-
-    // diagonal coordinate
-    float s = instanceOffset.x + instanceOffset.y;
-
-    vec2 center = instanceOffset;
-    float t = clamp(uTime / 0.5, 0.0, 1.0);
-    float ease = smoothstep(0.0, 1.0, t);
-    float distance = length(center);
-    vec2 startCenter = instanceOffset * 10.0;
-
-    // interpolate from the circle → actual position
-    vec2 animatedCenter = mix(startCenter, center, ease);
-
-    pos.xy = animatedCenter + pos.xy;
-
-    // wave along diagonal
-    float spatialPhase = (s / uWaveLength) * 6.2831853; // 2π
-    float phase = spatialPhase + uTime * 0.5;
-    float scale = sin(phase) * uAmplitude + uBaseScale;
-    pos.xy += scale;
-
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-  }
-`;
-
-const fragmentShader = `
-  varying vec3 vColor;
-  varying float vAlpha;
-
-  void main() {
-    gl_FragColor = vec4(vColor, vAlpha);
-  }
-`;

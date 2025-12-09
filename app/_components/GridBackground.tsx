@@ -6,10 +6,44 @@ type GridBackgroundProps = {
   getProgress: () => number;
 };
 
+type RawSection = {
+  height: number; // 100, 200, ...
+  static: boolean;
+};
+
+type NormalizedSection = RawSection & {
+  startNorm: number; // 0..1
+  endNorm: number; // 0..1
+};
+
+function normalizeSections(sections: RawSection[], totalHeight: number): NormalizedSection[] {
+  let offset = 0;
+  return sections.map((s) => {
+    const startNorm = offset / totalHeight; // 0..1
+    const endNorm = (offset + s.height) / totalHeight; // 0..1
+    offset += s.height;
+    return { ...s, startNorm, endNorm };
+  });
+}
+
+const rawSections = [
+  { id: "hero", height: 100, static: false },
+  { id: "about", height: 200, static: true },
+  { id: "work", height: 200, static: true },
+  { id: "skills", height: 200, static: true },
+  { id: "contact", height: 200, static: false },
+];
+
+const totalHeight = rawSections.reduce((sum, s) => sum + s.height, 0);
+const sections = normalizeSections(rawSections, totalHeight);
+const normalizedViewportHeight = 100 / totalHeight;
+
 export default function GridBackground({ getProgress }: GridBackgroundProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
   const scrollRangeRef = React.useRef(0);
+  const lastProgressRef = React.useRef(0);
+  const virtualScrollYRef = React.useRef(0);
 
   const updateScrollRange = () => {
     const scrollContainer = scrollContainerRef.current;
@@ -55,6 +89,49 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
     const lineWidth = 1;
     const arm = crossSize / 2;
 
+    function calculateEasingMultiplier(): number {
+      const progress = getProgress(); // 0..1
+
+      const topOfScreen = progress * (1 - normalizedViewportHeight);
+      const bottomOfScreen = topOfScreen + normalizedViewportHeight;
+
+      lastProgressRef.current = progress;
+
+      const range = normalizedViewportHeight * 0.5; // how much progress around the section we use for easing
+      let multiplier = 1;
+
+      for (const section of sections) {
+        if (!section.static || section.height === 100) continue;
+
+        const sectionTop = section.startNorm;
+        const sectionBottom = section.endNorm;
+
+        const topStart = sectionTop - range; // start slowing here
+        const topEnd = sectionTop; // fully stopped when we reach top
+        const bottomStart = sectionBottom - range; // start speeding up here
+        const bottomEnd = sectionBottom; // fully sped up when we reach bottom
+
+        if (topOfScreen >= topStart && topOfScreen <= topEnd) {
+          // top of screen is in top range
+          const t = (topOfScreen - topStart) / (topEnd - topStart);
+          multiplier = Math.pow(1 - t, 2);
+          break;
+        } else if (topOfScreen >= sectionTop && bottomOfScreen < bottomStart) {
+          // fully stopped
+          multiplier = 0;
+          break;
+        } else if (bottomOfScreen >= bottomStart && bottomOfScreen < bottomEnd) {
+          // bottom of screen is in bottom range
+          let t = (bottomOfScreen - bottomStart) / (bottomEnd - bottomStart);
+          t = Math.max(0, Math.min(1, t));
+          multiplier = t * t;
+          break;
+        }
+      }
+
+      return multiplier;
+    }
+
     function renderCrosses(time: number) {
       if (!canvas) return;
 
@@ -66,8 +143,17 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
       const isDark = document.documentElement.classList.contains("dark");
       const baseStroke = isDark ? "255,255,255" : "0,0,0";
 
-      const scrollRange = scrollRangeRef.current;
-      const scrollY = getProgress() * scrollRange;
+      const progress = getProgress(); // 0..1
+      const scrollRange = scrollRangeRef.current; // total world height in px or whatever
+
+      const deltaProgress = progress - lastProgressRef.current;
+      lastProgressRef.current = progress;
+
+      const easingMultiplier = calculateEasingMultiplier();
+      // scale the delta, not the absolute
+      virtualScrollYRef.current += deltaProgress * scrollRange * easingMultiplier;
+
+      const scrollY = virtualScrollYRef.current;
 
       const firstRow = Math.floor(scrollY / spacing) - 1;
       const lastRow = firstRow + Math.ceil(h / spacing) + 2;

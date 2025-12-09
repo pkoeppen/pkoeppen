@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Source_Code_Pro } from "next/font/google";
 import localFont from "next/font/local";
 import React from "react";
 
@@ -18,6 +19,11 @@ const juxtaSansMono = localFont({
     },
   ],
   variable: "--font-juxta-sans-mono",
+});
+
+const sourceCodePro = Source_Code_Pro({
+  subsets: ["latin"],
+  variable: "--font-source-code-pro",
 });
 
 export const metadata: Metadata = {
@@ -56,7 +62,9 @@ export default function RootLayout({
           }}
         />
       </head>
-      <body className={`${juxtaSansMono.variable} antialiased`}>{children}</body>
+      <body className={`${juxtaSansMono.variable} ${sourceCodePro.variable} font-sans antialiased`}>
+        {children}
+      </body>
     </html>
   );
 }
