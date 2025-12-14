@@ -41,7 +41,6 @@ export default function ScrollScene() {
       onUpdate: function (self) {
         progressRef.current = self.progress;
         timeline.progress(self.progress);
-        console.log("p:", self.progress);
       },
     });
 
@@ -96,7 +95,6 @@ export default function ScrollScene() {
         start: "top top",
         end: "50% 50%",
         scrub: false,
-        markers: true,
         onEnter: showAbout,
         onEnterBack: showAbout,
         onLeave: hideAbout,
@@ -109,7 +107,6 @@ export default function ScrollScene() {
       if (!workSection || !workContent) return;
 
       const showWork = () => {
-        console.log("showWork");
         gsap.set(workContent, {
           display: "flex",
           zIndex: 30,
@@ -143,7 +140,6 @@ export default function ScrollScene() {
         start: "top top",
         end: "bottom 80%",
         scrub: false,
-        // markers: true,
         onEnter: showWork,
         onEnterBack: showWork,
         onLeave: hideWork,

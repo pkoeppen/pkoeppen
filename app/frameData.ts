@@ -26,13 +26,13 @@ export const keyframes: readonly Keyframe[] = [
   {
     frameStart: 14,
     frameEnd: 43,
-    progressStart: 2 / 6,
-    progressEnd: 3 / 6,
+    progressStart: 2 / 9,
+    progressEnd: 3 / 9,
   },
   {
     frameStart: 43,
     frameEnd: 66,
-    progressStart: 5 / 6,
+    progressStart: 5 / 9,
     progressEnd: 1,
   },
 ] as const;

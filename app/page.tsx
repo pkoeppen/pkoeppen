@@ -3,18 +3,27 @@
 import { faGithub, faLinkedin } from "@fortawesome/free-brands-svg-icons";
 import { faEnvelope } from "@fortawesome/pro-solid-svg-icons";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import React from "react";
 
 import FloatingText from "./_components/FloatingText";
 import Header from "./_components/Header";
 import ScrollScene from "./_components/ScrollScene";
+import WorkContent from "./_components/WorkContent";
 
 export default function Main() {
+  const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
+  const workSectionRef = React.useRef<HTMLDivElement | null>(null);
+
   return (
     <>
       <ScrollScene />
 
       <div id="smooth-wrapper" className="relative z-20">
-        <main id="smooth-content" className="relative z-10 flex min-h-screen flex-col items-center">
+        <main
+          id="smooth-content"
+          ref={scrollContainerRef}
+          className="relative z-10 flex min-h-screen flex-col items-center"
+        >
           <Header />
 
           <section
@@ -37,6 +46,7 @@ export default function Main() {
           />
           <section
             id="work"
+            ref={workSectionRef}
             data-section
             data-height="200"
             data-static="false"
@@ -99,20 +109,7 @@ export default function Main() {
         </div>
       </div>
 
-      <div
-        id="work-content"
-        className="fixed top-1/2 left-20 hidden w-1/2 -translate-y-1/2 flex-col gap-4"
-      >
-        <h2 className="font-extrablack font-display text-9xl">WORK</h2>
-        <p className="text-xl leading-loose">
-          Work content. Lorem ipsum dolor sit amet, consectetur adipiscing elit, sed do eiusmod
-          tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud
-          exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat. Duis aute irure
-          dolor in reprehenderit in voluptate velit esse cillum dolore eu fugiat nulla pariatur.
-          Excepteur sint occaecat cupidatat non proident, sunt in culpa qui officia deserunt mollit
-          anim id est laborum.
-        </p>
-      </div>
+      <WorkContent scrollContainerRef={scrollContainerRef} sectionRef={workSectionRef} />
     </>
   );
 }

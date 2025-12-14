@@ -8,3 +8,7 @@ Texel Thing plan
    - convert frames to array of pixel color RGBA tuples (key alpha by background color)
    - create index of beats/breakpoints
 4. Take frame array and draw texels with Three.js
+
+Ideas
+
+- Change FloatingText letter color when mouse gets close

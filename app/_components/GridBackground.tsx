@@ -3,75 +3,280 @@
 import React from "react";
 
 import useSections from "../_hooks/useSections";
+import { useLayoutStore } from "../_stores/layoutStore";
+
+const SPACING = 36;
+const BUFFER_ROWS = 2;
+const CROSS_SIZE = 6;
+const LINE_WIDTH = 1;
+const ARM = CROSS_SIZE / 2;
+
+const REPEL_RADIUS = 200;
+const REPEL_MARGIN = 5;
+const REPEL_STIFFNESS = 800;
+const REPEL_DAMPING = 1;
+const REPEL_RETURN_STIFFNESS = 40;
+const REPEL_RETURN_DAMPING = 2 * Math.sqrt(REPEL_RETURN_STIFFNESS);
+
+const NOISE_SCALE = 0.0025; // lower = bigger blobs
+const NOISE_SPEED = 0.0002;
+
+const MOUSE_EFFECT_RADIUS = 200;
+
+type HoverField = {
+  cx: number;
+  cy: number;
+  rx: number;
+  ry: number;
+  invRx2: number;
+  invRy2: number;
+  invExtentX2: number;
+  invExtentY2: number;
+};
+
+function expEase01(t: number, k = 4) {
+  t = Math.max(0, Math.min(1, t));
+  if (k <= 0) return t;
+  return (Math.exp(k * t) - 1) / (Math.exp(k) - 1);
+}
+
+type LUT = { p: Float32Array; y: Float32Array };
+
+/**
+ * Build a lookup table for mapping true scroll progress to grid background "eased" progress.
+ * @param samples - The number of samples to generate.
+ * @param scrollRange - The range of the scroll container progress in pixels.
+ * @param m - The easing function.
+ * @param scale - The scale to apply to the scroll progress; effectively shrinks or expands scroll range for parallax effect.
+ *                Scale <1 = content scrolls faster, >1 = grid scrolls faster.
+ * @returns The lookup table.
+ */
+function buildLUT(
+  samples: number,
+  scrollRange: number,
+  m: (p: number) => number,
+  scale?: number,
+): LUT {
+  const p = new Float32Array(samples); // progress
+  const y = new Float32Array(samples); // scrollY
+
+  let area = 0;
+  p[0] = 0;
+  y[0] = 0;
+
+  for (let i = 1; i < samples; i++) {
+    const p0 = (i - 1) / (samples - 1);
+    const p1 = i / (samples - 1);
+    const m0 = m(p0);
+    const m1 = m(p1);
+
+    area += (p1 - p0) * 0.5 * (m0 + m1); // trapezoid integral
+    p[i] = p1;
+    y[i] = area * scrollRange;
+  }
+
+  if (scale) {
+    for (let i = 0; i < samples; i++) y[i] *= scale;
+  }
+
+  return { p, y };
+}
+
+function sampleLUT(lut: LUT, progress: number): number {
+  const n = lut.p.length;
+  const x = clamp(progress, 0, 1);
+  const f = x * (n - 1);
+  const i0 = Math.floor(f);
+  const i1 = Math.min(n - 1, i0 + 1);
+  const t = f - i0;
+  return lut.y[i0] + (lut.y[i1] - lut.y[i0]) * t;
+}
+
+/**
+ * Compute the distance to the perimeter of a bounding box ellipse, along with a radial direction vector.
+ * @param px - The x coordinate of the point.
+ * @param py - The y coordinate of the point.
+ * @param rect - The rectangle to compute the distance to.
+ * @param padX - The padding to add to the x radius.
+ * @param padY - The padding to add to the y radius.
+ * @returns The distance to the perimeter and the normalized radial direction vector.
+ */
+function computeDistToEllipsePerimeter(hoverField: HoverField, px: number, py: number) {
+  const vx = px - hoverField.cx;
+  const vy = py - hoverField.cy;
+
+  const d2Cull = vx * vx * hoverField.invExtentX2 + vy * vy * hoverField.invExtentY2;
+  if (d2Cull > 1) return null;
+
+  const len = Math.hypot(vx, vy);
+
+  // if point is exactly at center, direction is undefined.
+  // pick a stable default (up)
+  if (len < 1e-8) {
+    const dist = Math.min(hoverField.rx, hoverField.ry);
+    return { signedDistToPerimeter: -dist, dirx: 0, diry: -1 };
+  }
+
+  const dirx = vx / len;
+  const diry = vy / len;
+
+  // scale factor to reach ellipse surface along ray cast from center
+  const scale = Math.sqrt(vx * vx * hoverField.invRx2 + vy * vy * hoverField.invRy2);
+  if (scale < 1e-8) {
+    const dist = Math.min(hoverField.rx, hoverField.ry);
+    return { signedDistToPerimeter: -dist, dirx, diry };
+  }
+
+  const inside = scale < 1;
+
+  // distance from point to ellipse perimeter along the ray
+  const dist = len * Math.abs(1 - 1 / scale);
+
+  return { signedDistToPerimeter: inside ? -dist : dist, dirx, diry, inside };
+}
 
 type GridBackgroundProps = {
   getProgress: () => number;
+};
+
+type GridState = {
+  // immutable (unless resized)
+  cols: number;
+  rowsVisible: number;
+  rowsAlloc: number;
+  N: number;
+  head: number;
+  lastTopWorldRow: number;
+  // updated every frame
+  x0: Float32Array;
+  y0: Float32Array;
+  x: Float32Array;
+  y: Float32Array;
+  vx: Float32Array;
+  vy: Float32Array;
+  rowWorldIndex: Int32Array;
 };
 
 export default function GridBackground({ getProgress }: GridBackgroundProps) {
   const canvasRef = React.useRef<HTMLCanvasElement | null>(null);
   const scrollContainerRef = React.useRef<HTMLDivElement | null>(null);
   const scrollRangeRef = React.useRef(0);
-  const lastProgressRef = React.useRef(0);
   const virtualScrollYRef = React.useRef(0);
+  const mouseXYRef = React.useRef<{ x: number; y: number } | null>(null);
+  const lastTimeRef = React.useRef<number | null>(null);
+  const baseStrokeRef = React.useRef<string>("0,0,0");
+  const gridRef = React.useRef<GridState | null>(null);
+  const lutRef = React.useRef<LUT | null>(null);
 
-  const updateScrollRange = () => {
-    const scrollContainer = scrollContainerRef.current;
-    if (!scrollContainer) return;
-    scrollRangeRef.current = Math.max(0, scrollContainer.scrollHeight - window.innerHeight);
-  };
+  const { ready: sectionsReady, sections, normalizedViewportHeight } = useSections();
 
-  const { ready, sections, normalizedViewportHeight } = useSections();
-
-  React.useLayoutEffect(() => {
-    if (!ready) return;
-
+  const allocateGrid = React.useCallback(() => {
     const canvas = canvasRef.current;
-    scrollContainerRef.current = document.querySelector("#smooth-content");
+    if (!canvas) return;
 
-    if (!canvas || !scrollContainerRef.current) return;
+    const css = canvas.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
 
-    const ctx = canvas.getContext("2d")!;
+    canvas.width = Math.max(1, Math.floor(css.width * dpr));
+    canvas.height = Math.max(1, Math.floor(css.height * dpr));
 
-    let mouseX: number | null = null;
-    let mouseY: number | null = null;
+    const cols = Math.max(1, Math.ceil(css.width / SPACING));
+    const rowsVisible = Math.max(1, Math.ceil(css.height / SPACING));
+    const rowsAlloc = rowsVisible + BUFFER_ROWS * 2;
+    const N = cols * rowsAlloc;
 
-    const handleResize = () => {
-      if (!canvas) return;
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = window.innerWidth * dpr;
-      canvas.height = window.innerHeight * dpr;
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      updateScrollRange();
+    const x0 = new Float32Array(N); // "home" x
+    const y0 = new Float32Array(N); // "home" y
+    const x = new Float32Array(N); // actual (world) x
+    const y = new Float32Array(N); // actual (world) y
+    const vx = new Float32Array(N);
+    const vy = new Float32Array(N);
+    const rowWorldIndex = new Int32Array(rowsAlloc);
+
+    const topWorldRow = Math.floor(virtualScrollYRef.current / SPACING);
+    const startWorldRow = topWorldRow - BUFFER_ROWS;
+
+    for (let r = 0; r < rowsAlloc; r++) {
+      const worldRow = startWorldRow + r;
+      rowWorldIndex[r] = worldRow;
+      const wy = worldRow * SPACING;
+
+      for (let c = 0; c < cols; c++) {
+        const i = r * cols + c;
+        const wx = c * SPACING;
+        x0[i] = x[i] = wx;
+        y0[i] = y[i] = wy;
+      }
+    }
+
+    gridRef.current = {
+      cols,
+      rowsVisible,
+      rowsAlloc,
+      N,
+      head: 0,
+      lastTopWorldRow: topWorldRow,
+      x0,
+      y0,
+      x,
+      y,
+      vx,
+      vy,
+      rowWorldIndex,
     };
+  }, []);
 
-    const handlePointerMove = (e: PointerEvent) => {
-      mouseX = e.clientX;
-      mouseY = e.clientY;
-    };
+  const reassignRowWorld = React.useCallback((r: number, worldRow: number) => {
+    const grid = gridRef.current;
+    if (!grid) return;
 
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    window.addEventListener("pointermove", handlePointerMove);
+    grid.rowWorldIndex[r] = worldRow;
+    const wy = worldRow * SPACING;
 
-    let frameId: number;
+    const base = r * grid.cols;
+    for (let c = 0; c < grid.cols; c++) {
+      const i = base + c;
+      grid.y0[i] = grid.y[i] = wy;
+      grid.vx[i] = 0;
+      grid.vy[i] = 0;
+    }
+  }, []);
 
-    const spacing = 36;
-    const crossSize = 6;
-    const lineWidth = 1;
-    const arm = crossSize / 2;
+  const shiftDownOne = React.useCallback(
+    (topWorldRow: number) => {
+      const grid = gridRef.current;
+      if (!grid) return;
 
-    function calculateEasingMultiplier(): number {
-      const progress = getProgress(); // 0..1
+      grid.head = (grid.head + 1) % grid.rowsAlloc;
 
+      const wrappedRow = (grid.head + grid.rowsAlloc - 1) % grid.rowsAlloc;
+      const newWorldRow = topWorldRow + grid.rowsVisible + BUFFER_ROWS - 1;
+
+      reassignRowWorld(wrappedRow, newWorldRow);
+    },
+    [reassignRowWorld],
+  );
+
+  const shiftUpOne = React.useCallback(
+    (topWorldRow: number) => {
+      const grid = gridRef.current;
+      if (!grid) return;
+
+      grid.head = (grid.head + grid.rowsAlloc - 1) % grid.rowsAlloc;
+
+      const wrappedRow = grid.head;
+      const newWorldRow = topWorldRow - BUFFER_ROWS;
+
+      reassignRowWorld(wrappedRow, newWorldRow);
+    },
+    [reassignRowWorld],
+  );
+
+  const calculateScrollEasingMultiplier = React.useCallback(
+    (progress: number): number => {
       const topOfScreen = progress * (1 - normalizedViewportHeight);
       const bottomOfScreen = topOfScreen + normalizedViewportHeight;
-
-      lastProgressRef.current = progress;
-
-      const range = normalizedViewportHeight * 0.5; // how much progress around the section we use for easing
+      const range = normalizedViewportHeight * 0.5; // how much progress around the section used for easing
       let multiplier = 1;
 
       for (const section of sections) {
@@ -88,105 +293,284 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
         if (topOfScreen >= topStart && topOfScreen <= topEnd) {
           // top of screen is in top range
           const t = (topOfScreen - topStart) / (topEnd - topStart);
-          multiplier = Math.pow(1 - t, 2);
+          multiplier = 1 - expEase01(t);
           break;
-        } else if (topOfScreen >= sectionTop && bottomOfScreen < bottomStart) {
+        }
+
+        if (topOfScreen >= sectionTop && bottomOfScreen <= bottomStart) {
           // fully stopped
           multiplier = 0;
           break;
-        } else if (bottomOfScreen >= bottomStart && bottomOfScreen < bottomEnd) {
+        }
+
+        if (bottomOfScreen >= bottomStart && bottomOfScreen <= bottomEnd) {
           // bottom of screen is in bottom range
-          let t = (bottomOfScreen - bottomStart) / (bottomEnd - bottomStart);
-          t = Math.max(0, Math.min(1, t));
-          multiplier = t * t;
+          const t = (bottomOfScreen - bottomStart) / (bottomEnd - bottomStart);
+          multiplier = expEase01(t);
           break;
         }
       }
 
       return multiplier;
+    },
+    [normalizedViewportHeight, sections],
+  );
+
+  const updateScroll = React.useCallback(() => {
+    const progress = getProgress(); // 0..1
+    virtualScrollYRef.current = sampleLUT(lutRef.current!, progress);
+  }, [getProgress]);
+
+  const updateWrapping = React.useCallback(() => {
+    const grid = gridRef.current;
+    if (!grid) return;
+
+    const targetTopWorldRow = Math.floor(virtualScrollYRef.current / SPACING);
+    let delta = targetTopWorldRow - grid.lastTopWorldRow;
+    if (delta === 0) return;
+
+    let curTop = grid.lastTopWorldRow;
+
+    while (delta > 0) {
+      curTop += 1;
+      shiftDownOne(curTop);
+      delta--;
     }
 
-    function renderCrosses(time: number) {
-      if (!canvas) return;
+    while (delta < 0) {
+      curTop -= 1;
+      shiftUpOne(curTop);
+      delta++;
+    }
 
-      ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    grid.lastTopWorldRow = targetTopWorldRow;
+  }, [shiftDownOne, shiftUpOne]);
 
-      const w = window.innerWidth;
-      const h = window.innerHeight;
+  const updateLUT = React.useCallback(() => {
+    lutRef.current = buildLUT(1024, scrollRangeRef.current, calculateScrollEasingMultiplier, 0.7);
+  }, [calculateScrollEasingMultiplier]);
 
-      const isDark = document.documentElement.classList.contains("dark");
-      const baseStroke = isDark ? "255,255,255" : "0,0,0";
+  const updateScrollRange = React.useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    scrollRangeRef.current = Math.max(0, container.scrollHeight - window.innerHeight);
+  }, []);
 
-      const progress = getProgress(); // 0..1
-      const scrollRange = scrollRangeRef.current; // total world height in px or whatever
+  React.useLayoutEffect(() => {
+    if (!sectionsReady) return;
 
-      const deltaProgress = progress - lastProgressRef.current;
-      lastProgressRef.current = progress;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
 
-      const easingMultiplier = calculateEasingMultiplier();
-      virtualScrollYRef.current += deltaProgress * scrollRange * easingMultiplier;
+    scrollContainerRef.current = document.querySelector("#smooth-content");
+    if (!scrollContainerRef.current) return;
 
-      const scrollY = virtualScrollYRef.current;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
 
-      const firstRow = Math.floor(scrollY / spacing) - 1;
-      const lastRow = firstRow + Math.ceil(h / spacing) + 2;
+    const onResize = () => {
+      allocateGrid();
+      updateScrollRange();
+      updateLUT();
+    };
 
-      for (let row = firstRow; row <= lastRow; row++) {
-        const yWorld = row * spacing;
-        const yScreen = yWorld - scrollY; // simulate infinite scroll
+    const onPointerMove = (e: PointerEvent) => {
+      mouseXYRef.current = { x: e.clientX, y: e.clientY };
+    };
 
-        for (let x = 0; x <= w + spacing; x += spacing) {
-          const xWorld = x;
-          const xScreen = xWorld; // no horizontal scroll
+    onResize();
 
-          const scale = 0.0025; // lower = bigger blobs
-          const speed = 0.0002;
-          const n = fbm2(xWorld * scale + time * speed, yWorld * scale + time * speed, 5); // ~[-5.6,5.6]
+    window.addEventListener("resize", onResize);
+    window.addEventListener("pointermove", onPointerMove);
+
+    let raf: number;
+
+    const loop = (t: number) => {
+      const grid = gridRef.current;
+      if (!grid) {
+        raf = requestAnimationFrame(loop);
+        return;
+      }
+
+      updateScroll();
+      updateWrapping();
+
+      const rawDT = lastTimeRef.current == null ? 0 : (t - lastTimeRef.current) / 1000;
+      const dt = Math.min(rawDT, 1 / 30); // cap dt at 33ms
+      lastTimeRef.current = t;
+
+      const { x: mouseX, y: mouseY } = mouseXYRef.current ?? { x: 0, y: 0 };
+
+      const rect = useLayoutStore.getState().hoveredElementBoundingRect;
+
+      const dpr = window.devicePixelRatio || 1;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, canvas.width / dpr, canvas.height / dpr);
+
+      const drag = Math.exp(-REPEL_DAMPING * dt);
+
+      let hoverField: HoverField | null = null;
+
+      if (rect) {
+        // precompute these for each frame
+        const rx = (rect.right - rect.left) * 0.5 * Math.SQRT2 + REPEL_MARGIN;
+        const ry = (rect.bottom - rect.top) * 0.5 * Math.SQRT2 + REPEL_MARGIN;
+        const extentX = rx + REPEL_RADIUS;
+        const extentY = ry + REPEL_RADIUS;
+        hoverField = {
+          cx: (rect.left + rect.right) * 0.5,
+          cy: (rect.top + rect.bottom) * 0.5,
+          rx,
+          ry,
+          invRx2: 1 / (rx * rx),
+          invRy2: 1 / (ry * ry),
+          invExtentX2: 1 / (extentX * extentX),
+          invExtentY2: 1 / (extentY * extentY),
+        };
+      }
+
+      for (let rr = 0; rr < grid.rowsAlloc; rr++) {
+        const r = (grid.head + rr) % grid.rowsAlloc;
+        const base = r * grid.cols;
+
+        for (let c = 0; c < grid.cols; c++) {
+          const i = base + c;
+
+          let screenX = grid.x[i];
+          let screenY = grid.y[i] - virtualScrollYRef.current;
+
+          let ax = 0;
+          let ay = 0;
+
+          const returnX = grid.x0[i] - grid.x[i];
+          const returnY = grid.y0[i] - grid.y[i];
+
+          ax += returnX * REPEL_RETURN_STIFFNESS;
+          ay += returnY * REPEL_RETURN_STIFFNESS;
+
+          grid.vx[i] -= grid.vx[i] * REPEL_RETURN_DAMPING * dt;
+          grid.vy[i] -= grid.vy[i] * REPEL_RETURN_DAMPING * dt;
+
+          if (rect) {
+            const result = computeDistToEllipsePerimeter(hoverField!, screenX, screenY);
+            if (result) {
+              const dist = result.signedDistToPerimeter;
+              const penetration = Math.max(0, -dist);
+              const t = (REPEL_RADIUS - dist) / REPEL_RADIUS;
+              const band = clamp(t, 0, 1); // 1 near margin, 0 at MARGIN + REPEL_RADIUS
+
+              const soft = band * band + 0.5; // sharpen near edge
+              const force = penetration + 0.15 * REPEL_MARGIN * soft;
+              const scale = REPEL_STIFFNESS * force;
+
+              ax += result.dirx * scale;
+              ay += result.diry * scale;
+            }
+          }
+
+          if (dt > 0) {
+            grid.vx[i] += ax * dt;
+            grid.vy[i] += ay * dt;
+
+            grid.vx[i] *= drag;
+            grid.vy[i] *= drag;
+
+            grid.x[i] += grid.vx[i] * dt;
+            grid.y[i] += grid.vy[i] * dt;
+
+            // update screenX and screenY
+            screenX = grid.x[i];
+            screenY = grid.y[i] - virtualScrollYRef.current;
+          }
+
+          if (screenY < 0) {
+            // don't draw if off-screen
+            continue;
+          }
+
+          const n = fbm2(
+            grid.x[i] * NOISE_SCALE + t * NOISE_SPEED,
+            grid.y[i] * NOISE_SCALE + t * NOISE_SPEED,
+            5,
+          ); // ~[-5.6,5.6]
           const v = clamp(Math.pow((n / 5.6) * 0.5 + 0.5, 3), 0, 0.15);
 
-          const radius = 200;
-          const distance = Math.hypot(xScreen - (mouseX ?? 0), yScreen - (mouseY ?? 0));
-          const proximity = Math.max(0, Math.min(1, 1 - distance / radius));
+          const distance = Math.hypot(screenX - (mouseX ?? 0), screenY - (mouseY ?? 0));
+          const proximity = Math.max(0, Math.min(1, 1 - distance / MOUSE_EFFECT_RADIUS));
           const alpha = clamp(v + proximity, 0, 0.5);
 
           if (alpha < 0.03) {
             continue; // skip very low alpha to save overdraw
           }
 
-          ctx.strokeStyle = `rgba(${baseStroke},${alpha})`;
-          ctx.lineWidth = lineWidth;
+          ctx.strokeStyle = `rgba(${baseStrokeRef.current},${alpha})`;
+          ctx.lineWidth = LINE_WIDTH;
 
           // draw a "+" centered at (x, y)
           ctx.beginPath();
           // vertical line
-          ctx.moveTo(xScreen, yScreen - (arm + arm * proximity));
-          ctx.lineTo(xScreen, yScreen + (arm + arm * proximity));
+          ctx.moveTo(screenX, screenY - (ARM + ARM * proximity));
+          ctx.lineTo(screenX, screenY + (ARM + ARM * proximity));
           // horizontal line
-          ctx.moveTo(xScreen - (arm + arm * proximity), yScreen);
-          ctx.lineTo(xScreen + (arm + arm * proximity), yScreen);
+          ctx.moveTo(screenX - (ARM + ARM * proximity), screenY);
+          ctx.lineTo(screenX + (ARM + ARM * proximity), screenY);
 
           ctx.stroke();
+
+          const debug = false;
+          if (rect && debug) {
+            // draw ellipse
+            ctx.strokeStyle = "red";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(
+              hoverField!.cx,
+              hoverField!.cy,
+              hoverField!.rx - REPEL_MARGIN,
+              hoverField!.ry - REPEL_MARGIN,
+              0,
+              0,
+              2 * Math.PI,
+            );
+            ctx.stroke();
+            // draw ellipse perimeter + margin
+            ctx.strokeStyle = "orange";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.ellipse(
+              hoverField!.cx,
+              hoverField!.cy,
+              hoverField!.rx,
+              hoverField!.ry,
+              0,
+              0,
+              2 * Math.PI,
+            );
+            ctx.stroke();
+          }
         }
       }
-    }
 
-    function tick(now: number) {
-      renderCrosses(now);
-      frameId = requestAnimationFrame(tick);
-    }
+      raf = requestAnimationFrame(loop);
+    };
 
-    frameId = requestAnimationFrame(tick);
+    raf = requestAnimationFrame(loop);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
-      //window.removeEventListener("pointermove", handlePointerMove);
-      cancelAnimationFrame(frameId);
+      window.removeEventListener("resize", onResize);
+      window.removeEventListener("pointermove", onPointerMove);
+      cancelAnimationFrame(raf);
     };
-  }, [ready, sections, normalizedViewportHeight, getProgress]);
+  }, [sectionsReady, allocateGrid, updateScrollRange, updateLUT, updateScroll, updateWrapping]);
+
+  React.useEffect(() => {
+    const isDark = document.documentElement.classList.contains("dark");
+    baseStrokeRef.current = isDark ? "255,255,255" : "0,0,0";
+  }, []);
 
   return (
     <div className="bg-background pointer-events-none fixed inset-0 z-0">
-      <canvas ref={canvasRef} />
+      <canvas ref={canvasRef} className="h-full w-full" />
     </div>
   );
 }

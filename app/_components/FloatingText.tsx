@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef } from "react";
+import React from "react";
 
 import "./FloatingText.css";
 
@@ -18,21 +18,20 @@ type CharState = {
   idleFreqY: number;
 };
 
-type WobblyTextProps = {
+type FloatingTextProps = {
   text: string;
   orientation?: "left" | "right";
 };
 
-export default function FloatingText({ text, orientation = "left" }: WobblyTextProps) {
+export default function FloatingText({ text, orientation = "left" }: FloatingTextProps) {
   const containerRef = React.useRef<HTMLDivElement | null>(null);
 
   React.useEffect(() => {
-    const start = performance.now();
-    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").sort(() => Math.random() - 0.5);
-
     const container = containerRef.current;
     if (!container) return;
 
+    const start = performance.now();
+    const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("").sort(() => Math.random() - 0.5);
     const chars = Array.from(container.querySelectorAll<HTMLDivElement>(".char"));
 
     const state: CharState[] = chars.map((el) => ({
@@ -127,20 +126,6 @@ export default function FloatingText({ text, orientation = "left" }: WobblyTextP
         const ty = idleY + repelY + offset;
 
         s.span.style.transform = `translate3d(${tx}px, ${ty}px, 0)`;
-
-        // if (timeSinceStart < index * charChangeDuration) {
-        //   // char not yet visible
-        // } else if (timeSinceLastCharChange > charChangeInterval) {
-        //   // random char visible, red
-        //   lastCharChange = now;
-        //   s.span.style.opacity = "1";
-        //   s.span.innerText = alphabet[(currentCharIndex++ + index) % alphabet.length];
-        //   s.span.style.color = `hsl(${colorOffset + Math.random() * 10}, 100%, 35%)`;
-        // } else if (timeSinceStart > (index + 1) * charChangeDuration + charChangeDurationBase) {
-        //   // final char
-        //   s.span.innerText = s.char;
-        //   s.span.style.color = "inherit";
-        // }
 
         if (timeSinceStart > (index + 1) * charChangeDuration + charChangeDurationBase) {
           // final char

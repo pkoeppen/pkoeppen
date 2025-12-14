@@ -1,6 +1,8 @@
 "use client";
 
 import { useFrame } from "@react-three/fiber";
+import gsap from "gsap";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 
@@ -114,21 +116,37 @@ export function PixelField({ timelineRef, getProgress }: PixelFieldProps) {
     const tl = timelineRef.current;
     tl.clear();
 
-    sections.forEach((section, index) => {
-      const { startNorm, endNorm } = section;
-      const duration = endNorm - startNorm;
+    gsap.to(meshRef.current!.position, {
+      x: 35,
+      scrollTrigger: {
+        trigger: "#about",
+        start: "top 50%",
+        end: "top top",
+        scrub: true,
+      },
+      ease: "power2.inOut",
+    });
 
-      const targetX = index % 2 === 0 ? 35 : -35;
+    gsap.to(meshRef.current!.position, {
+      x: -35,
+      scrollTrigger: {
+        trigger: "#work",
+        start: "top bottom",
+        end: "top top",
+        scrub: true,
+      },
+      ease: "power2.inOut",
+    });
 
-      tl.to(
-        meshRef.current!.position,
-        {
-          x: targetX,
-          duration,
-          ease: "power2.inOut",
-        },
-        startNorm,
-      );
+    gsap.to(meshRef.current!.position, {
+      y: 35,
+      scrollTrigger: {
+        trigger: "#skills",
+        start: "top top",
+        end: "bottom top",
+        scrub: true,
+      },
+      ease: "none",
     });
   }, [ready, sections, timelineRef]);
 
