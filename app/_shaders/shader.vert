@@ -21,21 +21,27 @@ void main() {
     pos.xy += instanceOffset;
 
     // ---- GRADIENT STRETCH FROM BOTTOM ----
-    // normalize height to 0..1 (0 = bottom, 1 = top)
-    float uBottomY = -10.0;
+    float uBottomY = -34.0;
     float uTopY = 10.0;
-    float uStretch = 2.0;
-    float h = clamp((pos.y - uBottomY) / (uTopY - uBottomY), 0.0, 1.0);
+    float uStretch = 1.3;
+    float t = clamp((pos.y - uBottomY) / (uTopY - uBottomY), 0.0, 1.0); // 0 = bottom, 1 = top
 
     // 1 at top, uStretch at bottom
-    float stretch = mix(uStretch, 1.0, h);
+    float stretch = mix(uStretch, 1.0, t);
+    float m = stretch * stretch * stretch * stretch;
 
-    float magnitude = length(instanceOffset - position.xy);
+    // float b = -34.0;
+    // if (pos.y < b) {
+    //     pos.y = b;
+    // }
 
-    float m = sin(pos.x * 0.2 + uTime * 2.0) * 0.5 + 1.5;
+    // float t = 30.0;
+    // if (pos.y > t) {
+    //     pos.y = t;
+    // }
 
-    pos.y -= stretch * m * 2.0;
-    //pos.x *= stretch * (sin(uTime * 4.0) * 0.5 + 1.0);
+    // pos.z = 50.0;
+    // pos.z *= m;
 
     // --------------------------------------
 

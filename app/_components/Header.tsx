@@ -1,3 +1,4 @@
+import classNames from "classnames";
 import Link from "next/link";
 import React from "react";
 
@@ -12,10 +13,18 @@ export default function Header() {
         <PeterKoeppen className="fill-foreground dark:fill-foreground-dark h-full" />
       </div>
       <nav className="h-grid font-display absolute left-1/2 flex -translate-x-1/2 transform items-stretch justify-center gap-16">
-        <HeaderButton href="#about">About</HeaderButton>
-        <HeaderButton href="#work">Work</HeaderButton>
-        <HeaderButton href="#skills">Skills</HeaderButton>
-        <HeaderButton href="#contact">Contact</HeaderButton>
+        <HeaderButton href="#about" rotate="ccw">
+          About
+        </HeaderButton>
+        <HeaderButton href="#work" rotate="cw">
+          Work
+        </HeaderButton>
+        <HeaderButton href="#skills" rotate="ccw">
+          Skills
+        </HeaderButton>
+        <HeaderButton href="#contact" rotate="cw">
+          Contact
+        </HeaderButton>
       </nav>
       <div className="flex items-center justify-end">
         <button className="h-16 w-16 rounded-full bg-zinc-800 text-white">
@@ -26,7 +35,15 @@ export default function Header() {
   );
 }
 
-function HeaderButton({ href, children }: { href: string; children: React.ReactNode }) {
+function HeaderButton({
+  href,
+  children,
+  rotate = "ccw",
+}: {
+  href: string;
+  children: React.ReactNode;
+  rotate?: "ccw" | "cw";
+}) {
   const buttonRef = React.useRef<HTMLButtonElement>(null);
   const { setHoveredElementBoundingRect, setHoveredElementStart } = useLayoutStore.getState();
 
@@ -34,7 +51,7 @@ function HeaderButton({ href, children }: { href: string; children: React.ReactN
     <Link href={href}>
       <button
         ref={buttonRef}
-        className="header-button"
+        className="header-button group"
         onMouseEnter={() => {
           setHoveredElementBoundingRect(buttonRef.current?.getBoundingClientRect() ?? null);
           setHoveredElementStart(performance.now());
@@ -44,7 +61,14 @@ function HeaderButton({ href, children }: { href: string; children: React.ReactN
           setHoveredElementStart(null);
         }}
       >
-        {children}
+        <div
+          className={classNames(
+            "transition-transform duration-200 group-hover:scale-115",
+            //rotate === "cw" ? "group-hover:rotate-5" : "group-hover:-rotate-5",
+          )}
+        >
+          {children}
+        </div>
       </button>
     </Link>
   );

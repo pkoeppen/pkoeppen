@@ -347,7 +347,7 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
   }, [shiftDownOne, shiftUpOne]);
 
   const updateLUT = React.useCallback(() => {
-    lutRef.current = buildLUT(1024, scrollRangeRef.current, calculateScrollEasingMultiplier, 0.7);
+    lutRef.current = buildLUT(1024, scrollRangeRef.current, calculateScrollEasingMultiplier, 0.5);
   }, [calculateScrollEasingMultiplier]);
 
   const updateScrollRange = React.useCallback(() => {
@@ -481,11 +481,6 @@ export default function GridBackground({ getProgress }: GridBackgroundProps) {
             // update screenX and screenY
             screenX = grid.x[i];
             screenY = grid.y[i] - virtualScrollYRef.current;
-          }
-
-          if (screenY < 0) {
-            // don't draw if off-screen
-            continue;
           }
 
           const n = fbm2(
